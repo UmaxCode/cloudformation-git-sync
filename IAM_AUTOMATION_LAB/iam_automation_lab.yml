@@ -23,21 +23,6 @@ Resources:
         - key: AppName
           Value: IAM_Automation
 
-    S3ReadAccessPolicy:
-      Type: AWS::IAM::Policy
-      Properties:
-        PolicyName: S3ReadAcesssPolicy
-        Groups:
-          - S3IamGroupWithS3ReadAccess
-          - EC2IamGroupWithS3ReadAccess
-        PolicyDocument:
-          Version: "2012-10-17"
-          Statement:
-            - Effect: "Allow"
-              Action:
-                - "s3:GetObject"
-              Resource: "*"
-
   S3IamGroupWithS3ReadAccess:
     Type: AWS::IAM::Group
     Properties:
@@ -48,6 +33,21 @@ Resources:
     Properties:
       GroupName: EC2IamGroupWithS3ReadAccess
 
+  S3ReadAccessPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: S3ReadAcesssPolicy
+      Groups:
+        - S3IamGroupWithS3ReadAccess
+        - EC2IamGroupWithS3ReadAccess
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Action:
+              - "s3:GetObject"
+            Resource: "*"
+
   IAMUser1:
     Type: AWS::IAM::User
     Properties:
@@ -55,8 +55,7 @@ Resources:
       Groups:
         - Ref: S3IamGroupWithS3ReadAccess
       LoginProfile:
-        Password:
-          - Sub: "{{resolve:secretsmanager:${OneTimePasswordSecret}::password}}"
+        Password: !Sub "{{resolve:secretsmanager:${OneTimePasswordSecretsManager}::password}}"
         PasswordResetRequired: true
       Tags:
         - Tag
@@ -68,8 +67,7 @@ Resources:
       Groups:
         - Ref: EC2IamGroupWithS3ReadAccess
       LoginProfile:
-        Password:
-          - Sub: "{{resolve:secretsmanager:${OneTimePasswordSecret}::password}}"
+        Password: !Sub "{{resolve:secretsmanager:${OneTimePasswordSecretsManager}::password}}"
         PasswordResetRequired: true
       Tags:
         - Tag
@@ -79,16 +77,14 @@ Resources:
     Properties:
       Name: user1_email
       Type: "String"
-      Value:
-        - Ref: user1_email
+      Value: !Ref user1_email
 
   User2EmailParam:
     Type: "AWS::SSM::Parameter"
     Properties:
       Name: user2_email
       Type: "String"
-      Value:
-        - Ref: user2_email
+      Value: !Ref user2_email
 
   # Lambda Function for printing user credentials
   LambdaPrintCredentialFunction:
@@ -97,8 +93,7 @@ Resources:
       FunctionName: PrintUsersCredentials
       Handler: "index.handler"
       Runtime: "python3.9"
-      Role:
-        - GetAtt: LambdaExecutionRole.Arn
+      Role: !GetAtt LambdaExecutionRole.Arn
       Code:
         ZipFile: |
           import boto3
