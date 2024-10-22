@@ -1,8 +1,12 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: ---
+
+# input parameters for first and second user's email
 Parameters:
-  user1_email:
+  user1Email:
     Type: String
     Description: Email address for user1.
-  user2_email:
+  user2Email:
     Type: String
     Description: Email address for user2.
 
@@ -17,10 +21,8 @@ Resources:
         GenerateStringKey: "password"
         PasswordLength: 30
         ExcludeCharacters: '"@/\'
-      ReplicaRegions:
-        - ReplicaRegion
       Tags:
-        - key: AppName
+        - Key: AppName
           Value: IAM_Automation
 
   S3IamGroupWithS3ReadAccess:
@@ -57,8 +59,6 @@ Resources:
       LoginProfile:
         Password: !Sub "{{resolve:secretsmanager:${OneTimePasswordSecretsManager}::password}}"
         PasswordResetRequired: true
-      Tags:
-        - Tag
 
   IAMUser2:
     Type: AWS::IAM::User
@@ -69,24 +69,21 @@ Resources:
       LoginProfile:
         Password: !Sub "{{resolve:secretsmanager:${OneTimePasswordSecretsManager}::password}}"
         PasswordResetRequired: true
-      Tags:
-        - Tag
 
   User1EmailParam:
     Type: "AWS::SSM::Parameter"
     Properties:
-      Name: user1_email
+      Name: user1Email
       Type: "String"
-      Value: !Ref user1_email
+      Value: !Ref user1Email
 
   User2EmailParam:
     Type: "AWS::SSM::Parameter"
     Properties:
-      Name: user2_email
+      Name: user2Email
       Type: "String"
-      Value: !Ref user2_email
+      Value: !Ref user2Email
 
-  # Lambda Function for printing user credentials
   LambdaPrintCredentialFunction:
     Type: "AWS::Lambda::Function"
     Properties:
@@ -115,7 +112,6 @@ Resources:
               print(f"User1: {user1_email}, Password: {password}")
               print(f"User2: {user2_email}, Password: {password}")
 
-  # Lambda Execution Role
   LambdaExecutionRole:
     Type: "AWS::IAM::Role"
     Properties:
@@ -138,7 +134,6 @@ Resources:
                   - "secretsmanager:GetSecretValue"
                 Resource: "*"
 
-  # EventBridge Rule for new user creation
   UserCreationEventRule:
     Type: "AWS::Events::Rule"
     Properties:
@@ -151,13 +146,12 @@ Resources:
           eventName:
             - "CreateUser"
       Targets:
-        - Arn: !GetAtt PrintCredentialsLambda.Arn
+        - Arn: !GetAtt LambdaPrintCredentialFunction.Arn
           Id: "PrintCredentialsTarget"
 
-  # Permissions for EventBridge to trigger Lambda
   LambdaInvokePermissions:
     Type: "AWS::Lambda::Permission"
     Properties:
-      FunctionName: !GetAtt PrintCredentialsLambda.Arn
+      FunctionName: !GetAtt LambdaPrintCredentialFunction.Arn
       Action: "lambda:InvokeFunction"
       Principal: "events.amazonaws.com"
