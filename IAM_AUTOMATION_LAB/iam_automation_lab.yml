@@ -1,0 +1,168 @@
+Parameters:
+  user1_email:
+    Type: String
+    Description: Email address for user1.
+  user2_email:
+    Type: String
+    Description: Email address for user2.
+
+Resources:
+  OneTimePasswordSecretsManager:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: MySecretForIAMUsers
+      Description: "Provide auto-generated OTP for users"
+      GenerateSecretString:
+        SecretStringTemplate: '{"password": ""}'
+        GenerateStringKey: "password"
+        PasswordLength: 30
+        ExcludeCharacters: '"@/\'
+      ReplicaRegions:
+        - ReplicaRegion
+      Tags:
+        - key: AppName
+          Value: IAM_Automation
+
+    S3ReadAccessPolicy:
+      Type: AWS::IAM::Policy
+      Properties:
+        PolicyName: S3ReadAcesssPolicy
+        Groups:
+          - S3IamGroupWithS3ReadAccess
+          - EC2IamGroupWithS3ReadAccess
+        PolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+            - Effect: "Allow"
+              Action:
+                - "s3:GetObject"
+              Resource: "*"
+
+  S3IamGroupWithS3ReadAccess:
+    Type: AWS::IAM::Group
+    Properties:
+      GroupName: S3IamGroupWithS3ReadAccess
+
+  EC2IamGroupWithS3ReadAccess:
+    Type: AWS::IAM::Group
+    Properties:
+      GroupName: EC2IamGroupWithS3ReadAccess
+
+  IAMUser1:
+    Type: AWS::IAM::User
+    Properties:
+      UserName: IAMUser1
+      Groups:
+        - Ref: S3IamGroupWithS3ReadAccess
+      LoginProfile:
+        Password:
+          - Sub: "{{resolve:secretsmanager:${OneTimePasswordSecret}::password}}"
+        PasswordResetRequired: true
+      Tags:
+        - Tag
+
+  IAMUser2:
+    Type: AWS::IAM::User
+    Properties:
+      UserName: IAMUser2
+      Groups:
+        - Ref: EC2IamGroupWithS3ReadAccess
+      LoginProfile:
+        Password:
+          - Sub: "{{resolve:secretsmanager:${OneTimePasswordSecret}::password}}"
+        PasswordResetRequired: true
+      Tags:
+        - Tag
+
+  User1EmailParam:
+    Type: "AWS::SSM::Parameter"
+    Properties:
+      Name: user1_email
+      Type: "String"
+      Value:
+        - Ref: user1_email
+
+  User2EmailParam:
+    Type: "AWS::SSM::Parameter"
+    Properties:
+      Name: user2_email
+      Type: "String"
+      Value:
+        - Ref: user2_email
+
+  # Lambda Function for printing user credentials
+  LambdaPrintCredentialFunction:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      FunctionName: PrintUsersCredentials
+      Handler: "index.handler"
+      Runtime: "python3.9"
+      Role:
+        - GetAtt: LambdaExecutionRole.Arn
+      Code:
+        ZipFile: |
+          import boto3
+          import json
+
+          def handler(event, context):
+              ssm = boto3.client('ssm')
+              secretsmanager = boto3.client('secretsmanager')
+
+              # Fetch user emails from SSM
+              user1_email = ssm.get_parameter(Name='user1_email')['Parameter']['Value']
+              user2_email = ssm.get_parameter(Name='user2_email')['Parameter']['Value']
+
+              # Fetch password from Secrets Manager
+              secret = secretsmanager.get_secret_value(SecretId=event['secretId'])
+              password = json.loads(secret['SecretString'])['password']
+
+              # Print credentials
+              print(f"User1: {user1_email}, Password: {password}")
+              print(f"User2: {user2_email}, Password: {password}")
+
+  # Lambda Execution Role
+  LambdaExecutionRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      RoleName: "LambdaExecutionRole"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service: "lambda.amazonaws.com"
+            Action: "sts:AssumeRole"
+      Policies:
+        - PolicyName: "LambdaSSMSecretsAccess"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - "ssm:GetParameter"
+                  - "secretsmanager:GetSecretValue"
+                Resource: "*"
+
+  # EventBridge Rule for new user creation
+  UserCreationEventRule:
+    Type: "AWS::Events::Rule"
+    Properties:
+      EventPattern:
+        source:
+          - "aws.iam"
+        detail-type:
+          - "AWS API Call via CloudTrail"
+        detail:
+          eventName:
+            - "CreateUser"
+      Targets:
+        - Arn: !GetAtt PrintCredentialsLambda.Arn
+          Id: "PrintCredentialsTarget"
+
+  # Permissions for EventBridge to trigger Lambda
+  LambdaInvokePermissions:
+    Type: "AWS::Lambda::Permission"
+    Properties:
+      FunctionName: !GetAtt PrintCredentialsLambda.Arn
+      Action: "lambda:InvokeFunction"
+      Principal: "events.amazonaws.com"
