@@ -1,0 +1,7 @@
+template-file-path: IAM_AUTOMATION_LAB /iam_automation_lab.yml
+parameters:
+  user1Name: kwame
+  user2Name: kwasi
+  user2Email: kwasi@gmail.com
+  user1Email: kwame@gmail.com
+tags: {}
