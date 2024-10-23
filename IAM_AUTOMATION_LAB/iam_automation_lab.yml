@@ -1,7 +1,6 @@
 AWSTemplateFormatVersion: 2010-09-09
-Description: ---
+Description: CloudFormation template for creating IAM resources, Secrets Manager, S3 groups, and EventBridge
 
-# input parameters for first and second user's email
 Parameters:
   user1Name:
     Type: String
@@ -79,14 +78,14 @@ Resources:
   User1EmailParam:
     Type: "AWS::SSM::Parameter"
     Properties:
-      Name: /user1/email
+      Name: !Sub "/${user1Name}/email"
       Type: "String"
       Value: !Ref user1Email
 
   User2EmailParam:
     Type: "AWS::SSM::Parameter"
     Properties:
-      Name: /user2/email
+      Name: !Sub "/${user2Name}/email"
       Type: "String"
       Value: !Ref user2Email
 
@@ -105,18 +104,26 @@ Resources:
           def handler(event, context):
               ssm = boto3.client('ssm')
               secretsmanager = boto3.client('secretsmanager')
+              
+              # Extract the user name from the event details
+              username = event['detail']['requestParameters']['userName']
+              
+              # Construct the parameter store names for the user
+              user_para_store_value = f"/{username}/email"
 
-              # Fetch user emails from SSM
-              user1_email = ssm.get_parameter(Name='user1_email')['Parameter']['Value']
-              user2_email = ssm.get_parameter(Name='user2_email')['Parameter']['Value']
-
-              # Fetch password from Secrets Manager
-              secret = secretsmanager.get_secret_value(SecretId=event['secretId'])
-              password = json.loads(secret['SecretString'])['password']
-
-              # Print credentials
-              print(f"User1: {user1_email}, Password: {password}")
-              print(f"User2: {user2_email}, Password: {password}")
+              try:
+                  # Fetch the user's email from SSM
+                  user_email = ssm.get_parameter(Name=user_para_store_value)['Parameter']['Value']
+                  
+                  # Fetch the password from Secrets Manager
+                  secret = secretsmanager.get_secret_value(SecretId=event['secretId'])
+                  password = json.loads(secret['SecretString'])['password']
+                  
+                  # Print credentials
+                  print(f"Email: {user_email}, Password: {password}")
+                  
+              except Exception as e:
+                  print(f"Error fetching data for user {user_name}: {str(e)}")
 
   LambdaExecutionRole:
     Type: "AWS::IAM::Role"
@@ -164,3 +171,40 @@ Resources:
       Action: "lambda:InvokeFunction"
       Principal: "events.amazonaws.com"
       SourceArn: !GetAtt UserCreationEventRule.Arn
+
+Outputs:
+  User1Name:
+    Description: "Username of the first IAM user"
+    Value: !Ref IAMUser1
+
+  User1Email:
+    Description: "Email of the first IAM user"
+    Value: !Ref user1Email
+
+  User2Name:
+    Description: "Username of the second IAM user"
+    Value: !Ref IAMUser2
+
+  User2Email:
+    Description: "Email of the second IAM user"
+    Value: !Ref user2Email
+
+  OneTimePasswordSecret:
+    Description: "Secret ARN for the One-Time Password stored in Secrets Manager"
+    Value: !Ref OneTimePasswordSecretsManager
+
+  S3Group:
+    Description: "Name of the S3 IAM Group"
+    Value: !Ref S3IamGroupWithS3ReadAccess
+
+  EC2Group:
+    Description: "Name of the EC2 IAM Group"
+    Value: !Ref EC2IamGroupWithS3ReadAccess
+
+  UserCreationEventRule:
+    Description: "ARN of the EventBridge rule for user creation"
+    Value: !GetAtt UserCreationEventRule.Arn
+
+  LambdaFunction:
+    Description: "ARN of the Lambda function to print user credentials"
+    Value: !GetAtt LambdaPrintCredentialFunction.Arn
