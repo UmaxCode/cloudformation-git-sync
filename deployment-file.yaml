@@ -1,4 +1,4 @@
-template-file-path: ./cfn-template.yaml
+template-file-path: ./IAM_AUTOMATION_LAB/iam_automation_lab.yml
 tags:
   Name: 'gitsync'
   Project: 'Demo'
